@@ -1,38 +1,67 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from flask import Flask, request, jsonify
+import requests
 
-TOKEN = "ISI_TOKEN_DARI_BOTFATHER"
+BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
+CHAT_ID = "@mysterycodebot"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 BOT TRADING AKTIF\n\n"
-        "/buy - Sinyal BUY\n"
-        "/sell - Sinyal SELL\n"
-        "/signal - Contoh sinyal\n"
-        "/help - Panduan"
-    )
+TP_POINT = 5000
+SL_POINT = 5000
 
-async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🟢 SIGNAL BUY\n\nPair:\nEntry:\nTP:\nSL:")
+total_trade = 0
+win = 0
+loss = 0
 
-async def sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔴 SIGNAL SELL\n\nPair:\nEntry:\nTP:\nSL:")
+app = Flask(__name__)
 
-async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📈 CONTOH SINYAL\n\n"
-        "Pair: XAUUSD\nArah: BUY\nEntry: 2350-2345\nTP: 2380\nSL: 2325"
-    )
+def send_telegram(msg):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    requests.post(url, json={"chat_id": CHAT_ID, "text": msg})
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Gunakan /buy /sell /signal")
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    global total_trade, win, loss
 
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("buy", buy))
-app.add_handler(CommandHandler("sell", sell))
-app.add_handler(CommandHandler("signal", signal))
-app.add_handler(CommandHandler("help", help_command))
+    data = request.json
+    event = data.get("event")  # ENTRY / TP / SL
+    signal = data.get("signal")
+    price = float(data.get("price", 0))
+    reason = data.get("reason", "")
 
-print("Bot Trading aktif...")
-app.run_polling()
+    if event == "ENTRY":
+        msg = (
+            f"🔔 SIGNAL {signal} XAUUSD (M5)\n\n"
+            f"Entry : {price}\n"
+            f"Alasan : {reason}\n"
+            f"TP : {price + TP_POINT if signal=='BUY' else price - TP_POINT}\n"
+            f"SL : {price - SL_POINT if signal=='BUY' else price + SL_POINT}"
+        )
+        send_telegram(msg)
+
+    elif event == "TP":
+        total_trade += 1
+        win += 1
+        winrate = (win / total_trade) * 100
+        send_telegram(
+            f"✅ TAKE PROFIT HIT\n\n"
+            f"Result : WIN\n"
+            f"Total Trade : {total_trade}\n"
+            f"Win : {win} | Loss : {loss}\n"
+            f"Winrate : {winrate:.2f}%"
+        )
+
+    elif event == "SL":
+        total_trade += 1
+        loss += 1
+        winrate = (win / total_trade) * 100
+        send_telegram(
+            f"❌ STOP LOSS HIT\n\n"
+            f"Result : LOSS\n"
+            f"Total Trade : {total_trade}\n"
+            f"Win : {win} | Loss : {loss}\n"
+            f"Winrate : {winrate:.2f}%"
+        )
+
+    return jsonify({"status": "ok"})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
