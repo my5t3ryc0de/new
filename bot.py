@@ -3,25 +3,26 @@ import time
 from collections import deque
 from datetime import datetime
 import threading
-import re
 
 # =====================
 # BOT SETTING LANGSUNG
 # =====================
 BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
-CHAT_ID = "5446217291"  # primary user
+CHAT_ID = 5446217291  # primary user
+ADMIN_ID = 5446217291
+ALLOWED_USERS = [5446217291]  # bisa tambah user
 
-CHECK_INTERVAL = 10  # delay aman
+CHECK_INTERVAL = 10
 LOT = 0.01
 MODAL = 100
-TP = 500  # 500 point (~5 USD)
-SL = 500  # 500 point (~5 USD)
+TP = 500
+SL = 500
 
 # =====================
-# ADMIN & USER WHITELIST
+# GoldAPI.io (gratis versi terbatas)
+# Daftar di https://www.goldapi.io/
 # =====================
-ADMIN_ID = 5446217291
-ALLOWED_USERS = [5446217291]  # admin bisa ditambah
+GOLD_API_KEY = "YOUR_FREE_API_KEY"
 
 # =====================
 # TRADING VARIABLES
@@ -33,12 +34,11 @@ entry_price = 0
 tp_price = 0
 sl_price = 0
 strategy_used = None
-
 total_trade = 0
 win = 0
 loss = 0
 last_update_id = None
-last_signal_sent = None  # untuk mencegah spam
+last_signal_sent = None
 
 # =====================
 # STRATEGI + WINRATE
@@ -65,21 +65,26 @@ def send_telegram(msg, chat_id=CHAT_ID):
         pass
 
 # =====================
-# GET GOLD PRICE
+# GET GOLD PRICE VIA API
 # =====================
 def get_price():
     try:
-        url = "https://www.investing.com/commodities/gold"
-        headers = {"User-Agent":"Mozilla/5.0"}
+        url = "https://www.goldapi.io/api/XAU/USD"
+        headers = {"x-access-token": GOLD_API_KEY, "Content-Type": "application/json"}
         r = requests.get(url, headers=headers, timeout=10)
-        # regex baru yang lebih stabil
-        m = re.search(r'class="instrument-price_last__KQzyA">([\d,\.]+)<', r.text)
-        if m:
-            return float(m.group(1).replace(",", ""))
-        return prices[-1] if prices else None  # fallback
+        data = r.json()
+        if "price" in data:
+            return float(data["price"])
+        elif prices:  # fallback harga terakhir
+            return prices[-1]
+        else:
+            return None
     except:
-        return prices[-1] if prices else None  # fallback
+        return prices[-1] if prices else None
 
+# =====================
+# EMA FUNCTION
+# =====================
 def ema(data, period=50):
     if len(data) < period:
         return None
@@ -131,15 +136,13 @@ def check_command():
                     send_telegram(f"⚠️ Anda tidak diizinkan menggunakan bot ini (Chat ID: {chat_id})", chat_id)
                     continue
 
-                # =====================
                 # COMMANDS
-                # =====================
                 if text == "/status":
                     winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
                     send_telegram(f"🤖 Bot Status\nActive: {'Yes' if in_position else 'No'}\nTotal Trade: {total_trade}\nWin: {win} | Loss: {loss}\n💯 Winrate Aktual: {winrate_actual:.2f}%", chat_id)
 
                 elif text == "/balance":
-                    send_telegram(f"💰 Modal: ${MODAL}\nLot: {LOT}\nTP: {TP} | SL: {SL} (~5 USD per ounce)", chat_id)
+                    send_telegram(f"💰 Modal: ${MODAL}\nLot: {LOT}\nTP: {TP} | SL: {SL}", chat_id)
 
                 elif text == "/lastsignal":
                     if in_position:
@@ -155,22 +158,17 @@ def check_command():
                     send_telegram(msg, chat_id)
 
                 elif text == "/price":
-                    current_price = prices[-1] if prices else get_price()
+                    current_price = get_price()
                     if current_price:
                         send_telegram(f"💰 Harga XAU/USD Saat Ini: {current_price}", chat_id)
                     else:
-                        send_telegram("⚠️ Gagal mengambil harga XAU/USD saat ini", chat_id)
+                        send_telegram("⚠️ Gagal mengambil harga XAU/USD", chat_id)
 
                 elif text == "/help":
                     send_telegram(
-                        "📌 Daftar Command Bot XAU/USD:\n\n"
-                        "/status     - Cek status bot (aktif, total trade, win/loss, winrate)\n"
-                        "/balance    - Cek modal, lot, TP/SL\n"
-                        "/lastsignal - Lihat sinyal terakhir yang aktif\n"
-                        "/strategi   - Lihat semua strategi yang digunakan beserta winrate\n"
-                        "/price      - Cek harga XAU/USD saat ini\n"
-                        "/help       - Tampilkan daftar command ini\n"
-                        "/listuser   - Lihat daftar user (Hanya Admin)", chat_id)
+                        "📌 Daftar Command Bot XAU/USD:\n"
+                        "/status /balance /lastsignal /strategi /price /help /listuser", chat_id
+                    )
 
                 elif text == "/listuser":
                     if chat_id == ADMIN_ID:
@@ -192,7 +190,7 @@ threading.Thread(target=telegram_loop, daemon=True).start()
 # =====================
 # START BOT
 # =====================
-send_telegram("🤖 XAUUSD Bot iPhone ✅ | TP/SL 500 Point (~5 USD) | Winrate ditampilkan | Strategi lebih banyak | Admin Active")
+send_telegram("🤖 XAUUSD Bot ✅ | TP/SL 500 Point | Strategi Aktif | Winrate ditampilkan | Admin Active")
 
 # =====================
 # MAIN TRADING LOOP
@@ -207,7 +205,6 @@ while True:
         prices.append(price)
         ema50 = ema(list(prices), 50)
         ema20 = ema(list(prices), 20)
-
         if ema50 is None or ema20 is None:
             time.sleep(CHECK_INTERVAL)
             continue
@@ -217,14 +214,11 @@ while True:
 
         if not in_position:
             slope = ema20 - ema(list(prices)[-21:-1], 20) if len(prices) > 21 else 0
-
-            # EMA Crossover
             if ema20 > ema50 and slope > 0.05:
                 signal = "BUY"; strategy_used = "EMA Crossover + Slope"
             elif ema20 < ema50 and slope < -0.05:
                 signal = "SELL"; strategy_used = "EMA Crossover + Slope"
 
-            # Breakout 10 candle
             local_high = max(list(prices)[-10:])
             local_low = min(list(prices)[-10:])
             if price > local_high:
@@ -232,24 +226,12 @@ while True:
             elif price < local_low:
                 signal = "SELL"; strategy_used = "Breakout 10 Candle"
 
-            # Momentum 4 candle
             if len(prices) >= 4:
                 if prices[-1] > prices[-2] > prices[-3] > prices[-4]:
                     signal = "BUY"; strategy_used = "Momentum 4 Candle"
                 elif prices[-1] < prices[-2] < prices[-3] < prices[-4]:
                     signal = "SELL"; strategy_used = "Momentum 4 Candle"
 
-            # High/Low 10 candle
-            local_high_10 = max(list(prices)[-10:])
-            local_low_10 = min(list(prices)[-10:])
-            if price >= local_high_10:
-                signal = "BUY"; strategy_used = "High/Low 10 Candle"
-            elif price <= local_low_10:
-                signal = "SELL"; strategy_used = "High/Low 10 Candle"
-
-        # =====================
-        # KIRIM SINYAL BARU
-        # =====================
         if signal and not in_position and signal != last_signal_sent:
             in_position = True
             position_type = signal
@@ -270,9 +252,6 @@ Total Trade: {total_trade} | ✅ Win: {win} | ❌ Loss: {loss} | 💯 Winrate Ak
             send_telegram(msg)
             last_signal_sent = signal
 
-        # =====================
-        # MONITOR TP/SL
-        # =====================
         if in_position:
             winrate_strategy = strategies_winrate.get(strategy_used, 0)
             if position_type == "BUY":
