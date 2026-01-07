@@ -69,6 +69,19 @@ def send_telegram(msg):
         pass
 
 # =====================
+# KEEP-ALIVE LOOP (Prevent Railway Stop)
+# =====================
+def keep_alive():
+    while True:
+        try:
+            requests.get("https://api.telegram.org")  # Ping external server
+        except:
+            pass
+        time.sleep(30)
+
+threading.Thread(target=keep_alive, daemon=True).start()
+
+# =====================
 # GET GOLD PRICE
 # =====================
 def get_price():
@@ -154,18 +167,13 @@ def check_command():
                 elif text == "/help":
                     msg = "/status - Cek status bot\n/balance - Cek modal & lot\n/lastsignal - Lihat sinyal terakhir\n/winrate - Lihat winrate tiap strategi\n/help - Daftar command"
                     send_telegram(msg)
-    except:
-        pass
+    except Exception as e:
+        send_telegram(f"⚠️ Telegram Command Error: {e}")
 
 # =====================
 # THREAD COMMAND TELEGRAM
 # =====================
-def command_loop():
-    while True:
-        check_command()
-        time.sleep(1)
-
-threading.Thread(target=command_loop, daemon=True).start()
+threading.Thread(target=lambda: [check_command() or time.sleep(1) for _ in iter(int,1)], daemon=True).start()
 
 # =====================
 # BOT START
@@ -290,4 +298,4 @@ Time: {now}
 
     except Exception as e:
         send_telegram(f"⚠️ Error: {e}")
-        time.sleep(60)
+        time.sleep(10)
