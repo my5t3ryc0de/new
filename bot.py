@@ -6,17 +6,29 @@ import threading
 import re
 
 # =====================
-# SETTING LANGSUNG
+# BOT SETTING LANGSUNG
 # =====================
 BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
-CHAT_ID = "5446217291"
+CHAT_ID = "5446217291"  # primary user
 
-CHECK_INTERVAL = 5  # delay super ringan
+CHECK_INTERVAL = 5
 LOT = 0.01
 MODAL = 100
 TP = 500  # TP 500 point (~5 USD)
 SL = 500  # SL 500 point (~5 USD)
 
+# =====================
+# ADMIN & USER WHITELIST
+# =====================
+ADMIN_ID = 5446217291
+ALLOWED_USERS = [
+    5446217291,  # admin
+    # tambahkan Chat ID lain jika mau
+]
+
+# =====================
+# TRADING VARIABLES
+# =====================
 prices = deque(maxlen=50)
 in_position = False
 position_type = None
@@ -37,17 +49,17 @@ strategies_winrate = {
 }
 
 # =====================
-# TELEGRAM FUNCTIONS
+# TELEGRAM FUNCTION
 # =====================
-def send_telegram(msg):
+def send_telegram(msg, chat_id=CHAT_ID):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        requests.post(url, json={"chat_id": CHAT_ID, "text": msg})
+        requests.post(url, json={"chat_id": chat_id, "text": msg})
     except:
         pass
 
 # =====================
-# GET GOLD PRICE VIA REGEX
+# GET GOLD PRICE
 # =====================
 def get_price():
     try:
@@ -91,23 +103,61 @@ def check_command():
                     continue
                 text = message.get("text", "")
                 chat_id = message["chat"]["id"]
-                if chat_id != int(CHAT_ID):
+
+                # =====================
+                # CHECK WHITELIST
+                # =====================
+                if chat_id not in ALLOWED_USERS:
+                    send_telegram(f"⚠️ Anda tidak diizinkan menggunakan bot ini (Chat ID: {chat_id})", chat_id)
                     continue
 
+                # =====================
+                # COMMANDS
+                # =====================
                 if text == "/status":
                     winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
                     resp = f"🤖 Bot Status\nActive: {'Yes' if in_position else 'No'}\nTotal Trade: {total_trade}\nWin: {win} | Loss: {loss}\n💯 Winrate Aktual: {winrate_actual:.2f}%"
-                    send_telegram(resp)
+                    send_telegram(resp, chat_id)
+
                 elif text == "/balance":
                     resp = f"💰 Modal: ${MODAL}\nLot: {LOT}\nTP: {TP} | SL: {SL} (~5 USD per ounce)"
-                    send_telegram(resp)
+                    send_telegram(resp, chat_id)
+
                 elif text == "/lastsignal":
                     if in_position:
                         winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
                         resp = f"📌 Last Signal: {position_type}\nEntry: {entry_price}\nTP: {tp_price}\nSL: {sl_price}\nStrategi: {strategy_used}\n💯 Winrate Aktual: {winrate_actual:.2f}%"
                     else:
                         resp = "📌 No active signal right now."
-                    send_telegram(resp)
+                    send_telegram(resp, chat_id)
+
+                elif text == "/strategi":
+                    msg = "📊 Strategi XAU/USD yang digunakan:\n\n"
+                    for i, (name, rate) in enumerate(strategies_winrate.items(), start=1):
+                        msg += f"{i}. {name.ljust(25)} : {rate}%\n"
+                    send_telegram(msg, chat_id)
+
+                elif text == "/help":
+                    msg = (
+                        "📌 Daftar Command Bot XAU/USD:\n\n"
+                        "/status     - Cek status bot (aktif, total trade, win/loss, winrate)\n"
+                        "/balance    - Cek modal, lot, TP/SL\n"
+                        "/lastsignal - Lihat sinyal terakhir yang aktif\n"
+                        "/strategi   - Lihat semua strategi yang digunakan beserta winrate\n"
+                        "/help       - Tampilkan daftar command ini\n"
+                        "/listuser   - Lihat daftar user (Hanya Admin)"
+                    )
+                    send_telegram(msg, chat_id)
+
+                elif text == "/listuser":
+                    if chat_id == ADMIN_ID:
+                        msg = "📋 Daftar User yang diizinkan:\n"
+                        for u in ALLOWED_USERS:
+                            msg += f"- {u}\n"
+                        send_telegram(msg, chat_id)
+                    else:
+                        send_telegram("⚠️ Command ini hanya bisa dipakai oleh Admin!", chat_id)
+
     except:
         pass
 
@@ -121,7 +171,7 @@ threading.Thread(target=telegram_loop, daemon=True).start()
 # =====================
 # START BOT
 # =====================
-send_telegram("🤖 XAUUSD Bot iPhone ✅ | TP/SL 500 Point (~5 USD) | Winrate ditampilkan")
+send_telegram("🤖 XAUUSD Bot iPhone ✅ | TP/SL 500 Point (~5 USD) | Winrate ditampilkan | Admin Active")
 
 # =====================
 # MAIN TRADING LOOP
