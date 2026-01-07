@@ -6,7 +6,7 @@ import threading
 import re
 
 # =====================
-# BOT SETTING
+# BOT SETTINGS
 # =====================
 BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
 ADMIN_ID = 5446217291
@@ -56,6 +56,19 @@ def send_telegram(msg, chat_id):
         pass
 
 # =====================
+# KEEP-ALIVE PING
+# =====================
+def keep_alive():
+    while True:
+        try:
+            requests.get("https://api.telegram.org", timeout=5)
+        except:
+            pass
+        time.sleep(300)  # ping setiap 5 menit
+
+threading.Thread(target=keep_alive, daemon=True).start()
+
+# =====================
 # GET HARGA XAU/USD DARI INVESTING.COM
 # =====================
 def get_price():
@@ -63,13 +76,12 @@ def get_price():
         url = "https://www.investing.com/commodities/gold"
         headers = {"User-Agent":"Mozilla/5.0"}
         r = requests.get(url, headers=headers, timeout=10)
-        # Cari harga terakhir dengan regex
         m = re.search(r'id="last_last">([\d,\.]+)<', r.text)
         if m:
             return float(m.group(1).replace(",", ""))
     except:
         pass
-    return None
+    return prices[-1] if prices else 0  # fallback harga terakhir
 
 def ema(data, period=50):
     if len(data) < period:
@@ -79,22 +91,6 @@ def ema(data, period=50):
     for p in data[1:]:
         e = p*k + e*(1-k)
     return e
-
-# =====================
-# INIT TELEGRAM LAST UPDATE
-# =====================
-def init_last_update():
-    global last_update_id
-    try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?timeout=1"
-        r = requests.get(url, timeout=5)
-        data = r.json()
-        if "result" in data and data["result"]:
-            last_update_id = data["result"][-1]["update_id"]
-    except:
-        last_update_id = None
-
-init_last_update()
 
 # =====================
 # TELEGRAM COMMANDS
@@ -174,10 +170,6 @@ send_telegram("🤖 XAU/USD Bot Gratis Aktif | TP/SL 500 point | Admin Aktif", A
 while True:
     try:
         price = get_price()
-        if price is None:
-            time.sleep(CHECK_INTERVAL)
-            continue
-
         prices.append(price)
         ema50 = ema(list(prices), 50)
         ema20 = ema(list(prices), 20)
