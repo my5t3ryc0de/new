@@ -6,8 +6,8 @@ from datetime import datetime
 # ======================
 # KONFIGURASI UTAMA
 # ======================
-BOT_TOKEN = "ISI_TOKEN_BOT_KAMU"
-CHAT_ID = 123456789  # ganti dengan chat_id kamu
+BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
+CHAT_ID = 5446217291  # ganti dengan chat_id kamu
 
 PAIR = "XAUUSD"
 TIMEFRAME = "M3"
