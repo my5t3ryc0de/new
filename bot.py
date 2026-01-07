@@ -33,6 +33,7 @@ win = 0
 loss = 0
 last_update_id = None
 last_signal_sent = None
+last_valid_price = 1950  # fallback awal
 
 strategies_winrate = {
     "EMA Crossover + Slope": 65,
@@ -72,14 +73,16 @@ threading.Thread(target=keep_alive, daemon=True).start()
 # GET HARGA XAU/USD VIA FMP API
 # =====================
 def get_price():
+    global last_valid_price
     try:
         url = f"https://financialmodelingprep.com/api/v3/quote-short/GCUSD?apikey={FMP_API_KEY}"
         r = requests.get(url, timeout=5).json()
         if r and "price" in r[0]:
-            return float(r[0]["price"])
+            last_valid_price = float(r[0]["price"])
+            return last_valid_price
     except:
         pass
-    return prices[-1] if prices else None  # fallback harga terakhir
+    return last_valid_price  # fallback harga terakhir
 
 def ema(data, period=50):
     if len(data) < period:
@@ -137,7 +140,7 @@ def check_command():
                 send_telegram(msg, chat_id)
 
             elif text == "/price":
-                price_now = prices[-1] if prices else "N/A"
+                price_now = prices[-1] if prices else last_valid_price
                 send_telegram(f"💰 Harga XAU/USD Saat Ini: {price_now}", chat_id)
 
                 # Chart via QuickChart.io
@@ -181,11 +184,6 @@ send_telegram("🤖 XAU/USD Bot M1 Gratis Aktif | TP/SL 500 point | Admin Aktif 
 while True:
     try:
         price = get_price()
-        if not price:
-            send_telegram("⚠️ Gagal ambil harga XAU/USD, menunggu retry...", ADMIN_ID)
-            time.sleep(CHECK_INTERVAL)
-            continue
-
         prices.append(price)
         ema50 = ema(list(prices), 50)
         ema20 = ema(list(prices), 20)
