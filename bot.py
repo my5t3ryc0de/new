@@ -2,17 +2,17 @@ import requests
 import time
 from collections import deque
 from datetime import datetime
-import random
 import threading
+import re
 
 # =====================
-# BOT SETTING LANGSUNG
+# BOT SETTING
 # =====================
 BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
 ADMIN_ID = 5446217291
 ALLOWED_USERS = [5446217291]
 
-CHECK_INTERVAL = 30  # loop ringan, hemat baterai
+CHECK_INTERVAL = 30  # loop ringan
 LOT = 0.01
 MODAL = 100
 TP = 500
@@ -56,15 +56,20 @@ def send_telegram(msg, chat_id):
         pass
 
 # =====================
-# SIMULASI HARGA XAU/USD
+# GET HARGA XAU/USD DARI INVESTING.COM
 # =====================
 def get_price():
-    if prices:
-        last_price = prices[-1]
-        fluct = last_price * random.uniform(-0.005, 0.005)  # ±0.5%
-        return round(last_price + fluct, 2)
-    else:
-        return round(random.uniform(1950, 2000), 2)
+    try:
+        url = "https://www.investing.com/commodities/gold"
+        headers = {"User-Agent":"Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=10)
+        # Cari harga terakhir dengan regex
+        m = re.search(r'id="last_last">([\d,\.]+)<', r.text)
+        if m:
+            return float(m.group(1).replace(",", ""))
+    except:
+        pass
+    return None
 
 def ema(data, period=50):
     if len(data) < period:
@@ -76,7 +81,7 @@ def ema(data, period=50):
     return e
 
 # =====================
-# TELEGRAM COMMANDS
+# INIT TELEGRAM LAST UPDATE
 # =====================
 def init_last_update():
     global last_update_id
@@ -91,6 +96,9 @@ def init_last_update():
 
 init_last_update()
 
+# =====================
+# TELEGRAM COMMANDS
+# =====================
 def check_command():
     global last_update_id
     try:
@@ -134,7 +142,8 @@ def check_command():
                 send_telegram(msg, chat_id)
 
             elif text == "/price":
-                send_telegram(f"💰 Harga XAU/USD Saat Ini: {prices[-1]}", chat_id)
+                price_now = prices[-1] if prices else "N/A"
+                send_telegram(f"💰 Harga XAU/USD Saat Ini: {price_now}", chat_id)
 
             elif text == "/help":
                 send_telegram(
@@ -157,7 +166,7 @@ threading.Thread(target=lambda: [check_command() or time.sleep(2) for _ in iter(
 # =====================
 # START BOT
 # =====================
-send_telegram("🤖 XAU/USD Bot Ultra-Ringan Aktif | TP/SL 500 point | Gratis & Aman | Admin Aktif", ADMIN_ID)
+send_telegram("🤖 XAU/USD Bot Gratis Aktif | TP/SL 500 point | Admin Aktif", ADMIN_ID)
 
 # =====================
 # MAIN TRADING LOOP
@@ -165,11 +174,13 @@ send_telegram("🤖 XAU/USD Bot Ultra-Ringan Aktif | TP/SL 500 point | Gratis & 
 while True:
     try:
         price = get_price()
-        prices.append(price)
+        if price is None:
+            time.sleep(CHECK_INTERVAL)
+            continue
 
+        prices.append(price)
         ema50 = ema(list(prices), 50)
         ema20 = ema(list(prices), 20)
-
         if ema50 is None or ema20 is None:
             time.sleep(CHECK_INTERVAL)
             continue
@@ -177,7 +188,7 @@ while True:
         signal = None
         strategy_used = None
 
-        # Strategi sederhana untuk lebih sering sinyal
+        # Strategi sederhana → sinyal lebih sering
         if not in_position:
             slope = ema20 - ema(list(prices)[-21:-1], 20) if len(prices) > 21 else 0
             if ema20 > ema50 and slope > 0.05:
@@ -206,7 +217,8 @@ while True:
             sl_price = entry_price - SL if signal == "BUY" else entry_price + SL
 
             last_signal_sent = signal
-            send_telegram(f"📈 SIGNAL {signal} | Harga: {price} | TP: {tp_price} | SL: {sl_price} | Strategi: {strategy_used}", ADMIN_ID)
+            winrate_strategy = strategies_winrate.get(strategy_used, 0)
+            send_telegram(f"📈 SIGNAL {signal} | Harga: {price} | TP: {tp_price} | SL: {sl_price} | Strategi: {strategy_used} | Winrate: {winrate_strategy}%", ADMIN_ID)
 
         # Monitor TP/SL
         if in_position:
@@ -225,4 +237,4 @@ while True:
 
     except Exception as e:
         send_telegram(f"⚠️ Error: {e}", ADMIN_ID)
-        time.sleep(5)
+        time.sleep(10)
