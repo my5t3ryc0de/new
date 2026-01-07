@@ -5,8 +5,8 @@ from collections import deque
 # ======================
 # KONFIGURASI
 # ======================
-BOT_TOKEN = "ISI_TOKEN_BOT_KAMU"
-CHAT_ID = "ISI_CHAT_ID_KAMU"
+BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
+CHAT_ID = "5446217291"
 
 PAIR = "XAUUSD"
 CHECK_INTERVAL = 60  # 1 menit
