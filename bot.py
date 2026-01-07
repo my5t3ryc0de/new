@@ -11,7 +11,7 @@ import re
 BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
 CHAT_ID = "5446217291"  # primary user
 
-CHECK_INTERVAL = 5
+CHECK_INTERVAL = 10  # lebih aman, anti spam
 LOT = 0.01
 MODAL = 100
 TP = 500  # TP 500 point (~5 USD)
@@ -41,6 +41,7 @@ total_trade = 0
 win = 0
 loss = 0
 last_update_id = None
+last_signal_sent = None  # untuk mencegah spam chat
 
 strategies_winrate = {
     "EMA Crossover + Slope": 65,
@@ -81,6 +82,22 @@ def ema(data, period=50):
     for p in data[1:]:
         e = p * k + e * (1 - k)
     return e
+
+# =====================
+# INIT LAST UPDATE (ANTI-SPAM)
+# =====================
+def init_last_update():
+    global last_update_id
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?timeout=1"
+        r = requests.get(url, timeout=5)
+        data = r.json()
+        if "result" in data and data["result"]:
+            last_update_id = data["result"][-1]["update_id"]
+    except:
+        last_update_id = None
+
+init_last_update()
 
 # =====================
 # TELEGRAM COMMANDS
@@ -214,7 +231,10 @@ while True:
                 elif prices[-1] < prices[-2] < prices[-3] < prices[-4]:
                     signal = "SELL"; strategy_used = "Momentum 4 Candle"
 
-        if signal and not in_position:
+        # =====================
+        # KIRIM SINYAL HANYA JIKA BARU
+        # =====================
+        if signal and not in_position and signal != last_signal_sent:
             in_position = True
             position_type = signal
             entry_price = price
@@ -231,7 +251,11 @@ Strategi: {strategy_used}
 Winrate Strategi: {winrate_strategy}%
 Total Trade: {total_trade} | ✅ Win: {win} | ❌ Loss: {loss} | 💯 Winrate Aktual: {winrate_actual:.2f}%"""
             send_telegram(msg)
+            last_signal_sent = signal
 
+        # =====================
+        # MONITOR TP/SL
+        # =====================
         if in_position:
             winrate_strategy = strategies_winrate.get(strategy_used, 0)
             if position_type == "BUY":
