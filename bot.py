@@ -81,7 +81,7 @@ def get_price():
             return float(m.group(1).replace(",", ""))
     except:
         pass
-    return prices[-1] if prices else 0  # fallback harga terakhir
+    return None  # harga tidak valid jika gagal
 
 def ema(data, period=50):
     if len(data) < period:
@@ -170,6 +170,11 @@ send_telegram("🤖 XAU/USD Bot M1 Gratis Aktif | TP/SL 500 point | Admin Aktif"
 while True:
     try:
         price = get_price()
+        if not price:
+            send_telegram("⚠️ Gagal ambil harga XAU/USD, menunggu retry...", ADMIN_ID)
+            time.sleep(CHECK_INTERVAL)
+            continue  # jangan lanjut ke signal jika harga tidak valid
+
         prices.append(price)
         ema50 = ema(list(prices), 50)
         ema20 = ema(list(prices), 20)
