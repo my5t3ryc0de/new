@@ -5,6 +5,7 @@ from datetime import datetime
 import os
 import matplotlib.pyplot as plt
 from io import BytesIO
+import threading
 
 # =====================
 # ENV VARIABLE (Railway)
@@ -134,20 +135,26 @@ def check_command():
         pass
 
 # =====================
+# COMMAND THREAD
+# =====================
+def command_loop():
+    while True:
+        check_command()
+        time.sleep(1)  # cek command tiap 1 detik untuk respons cepat
+
+threading.Thread(target=command_loop, daemon=True).start()
+
+# =====================
 # BOT START
 # =====================
 send_telegram("🤖 Ultimate XAUUSD Bot M1 AKTIF")
 send_telegram("✅ TEST BOT AKTIF")
 
 # =====================
-# LOOP UTAMA
+# LOOP UTAMA TRADING
 # =====================
 while True:
     try:
-        # ✅ Cek command Telegram
-        check_command()
-
-        # ✅ Ambil harga & strategi
         price = get_price()
         prices.append(price)
         ema50 = ema(list(prices))
