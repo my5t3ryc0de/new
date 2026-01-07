@@ -3,7 +3,6 @@ import time
 from collections import deque
 from datetime import datetime
 import threading
-import re
 
 # =====================
 # BOT SETTINGS
@@ -11,6 +10,7 @@ import re
 BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
 ADMIN_ID = 5446217291
 ALLOWED_USERS = [5446217291]
+FMP_API_KEY = "Kqr4wtIn1yRpyZriimiZI6SxYNZ9xgmj"
 
 CHECK_INTERVAL = 60  # 1 menit
 LOT = 0.01
@@ -69,16 +69,14 @@ def keep_alive():
 threading.Thread(target=keep_alive, daemon=True).start()
 
 # =====================
-# GET HARGA XAU/USD
+# GET HARGA XAU/USD VIA FMP API
 # =====================
 def get_price():
     try:
-        url = "https://www.investing.com/commodities/gold"
-        headers = {"User-Agent":"Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=10)
-        m = re.search(r'id="last_last">([\d,\.]+)<', r.text)
-        if m:
-            return float(m.group(1).replace(",", ""))
+        url = f"https://financialmodelingprep.com/api/v3/quote-short/GCUSD?apikey={FMP_API_KEY}"
+        r = requests.get(url, timeout=5).json()
+        if r and "price" in r[0]:
+            return float(r[0]["price"])
     except:
         pass
     return prices[-1] if prices else None  # fallback harga terakhir
@@ -142,7 +140,7 @@ def check_command():
                 price_now = prices[-1] if prices else "N/A"
                 send_telegram(f"💰 Harga XAU/USD Saat Ini: {price_now}", chat_id)
 
-                # ===== Generate Chart via QuickChart.io =====
+                # Chart via QuickChart.io
                 if len(prices) >= 2:
                     chart_data = ",".join([str(p) for p in prices])
                     chart_url = (
@@ -198,7 +196,7 @@ while True:
         signal = None
         strategy_used = None
 
-        # STRATEGI UTAMA → sinyal lebih sering
+        # STRATEGI → lebih sering muncul
         if not in_position:
             slope = ema20 - ema(list(prices)[-21:-1], 20) if len(prices) > 21 else 0
             if ema20 > ema50 and slope > 0.05:
@@ -225,7 +223,6 @@ while True:
             entry_price = price
             tp_price = entry_price + TP if signal == "BUY" else entry_price - TP
             sl_price = entry_price - SL if signal == "BUY" else entry_price + SL
-
             last_signal_sent = signal
             winrate_strategy = strategies_winrate.get(strategy_used, 0)
             send_telegram(f"📈 SIGNAL {signal} | Harga: {price} | TP: {tp_price} | SL: {sl_price} | Strategi: {strategy_used} | Winrate: {winrate_strategy}%", ADMIN_ID)
