@@ -12,7 +12,7 @@ BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
 ADMIN_ID = 5446217291
 ALLOWED_USERS = [5446217291]
 
-CHECK_INTERVAL = 30  # loop ringan
+CHECK_INTERVAL = 60  # 1 menit = M1
 LOT = 0.01
 MODAL = 100
 TP = 500
@@ -69,7 +69,7 @@ def keep_alive():
 threading.Thread(target=keep_alive, daemon=True).start()
 
 # =====================
-# GET HARGA XAU/USD DARI INVESTING.COM
+# GET HARGA XAU/USD
 # =====================
 def get_price():
     try:
@@ -162,10 +162,10 @@ threading.Thread(target=lambda: [check_command() or time.sleep(2) for _ in iter(
 # =====================
 # START BOT
 # =====================
-send_telegram("🤖 XAU/USD Bot Gratis Aktif | TP/SL 500 point | Admin Aktif", ADMIN_ID)
+send_telegram("🤖 XAU/USD Bot M1 Gratis Aktif | TP/SL 500 point | Admin Aktif", ADMIN_ID)
 
 # =====================
-# MAIN TRADING LOOP
+# MAIN TRADING LOOP (M1)
 # =====================
 while True:
     try:
