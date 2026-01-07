@@ -3,13 +3,13 @@ import time
 from collections import deque
 from datetime import datetime
 import threading
-from bs4 import BeautifulSoup
+import re
 
 # =====================
 # SETTING LANGSUNG
 # =====================
-BOT_TOKEN = "MASUKKAN_BOT_TOKEN_DISINI"
-CHAT_ID = "MASUKKAN_CHAT_ID_DISINI"
+BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
+CHAT_ID = "5446217291"
 
 CHECK_INTERVAL = 5  # delay super ringan
 LOT = 0.01
@@ -47,19 +47,16 @@ def send_telegram(msg):
         pass
 
 # =====================
-# GET GOLD PRICE VIA SCRAPING
+# GET GOLD PRICE VIA REGEX
 # =====================
 def get_price():
     try:
         url = "https://www.investing.com/commodities/gold"
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
+        headers = {"User-Agent":"Mozilla/5.0"}
         r = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(r.text, "html.parser")
-        price_tag = soup.find("span", {"id": "last_last"})
-        if price_tag:
-            return float(price_tag.text.replace(",", ""))
+        m = re.search(r'id="last_last">([\d,\.]+)<', r.text)
+        if m:
+            return float(m.group(1).replace(",", ""))
         return None
     except:
         return None
@@ -124,7 +121,7 @@ threading.Thread(target=telegram_loop, daemon=True).start()
 # =====================
 # START BOT
 # =====================
-send_telegram("🤖 XAUUSD Bot tanpa API Key ✅ | TP/SL 500 Point (~5 USD) | Winrate ditampilkan")
+send_telegram("🤖 XAUUSD Bot iPhone ✅ | TP/SL 500 Point (~5 USD) | Winrate ditampilkan")
 
 # =====================
 # MAIN TRADING LOOP
