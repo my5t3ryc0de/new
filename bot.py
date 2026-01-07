@@ -12,7 +12,7 @@ import threading
 # =====================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-GOLD_API_KEY = os.getenv("GOLD_API_KEY")  # <-- API key kamu disini
+GOLD_API_KEY = os.getenv("GOLD_API_KEY")  # <-- API key Gold API
 
 # =====================
 # CONFIG
@@ -72,7 +72,7 @@ def send_chart(prices, entry=None, tp1=None, tp2=None, sl=None):
         pass
 
 # =====================
-# GET PRICE GOLD API
+# GET PRICE GOLD API (AMAN)
 # =====================
 def get_price():
     url = "https://www.goldapi.io/api/XAU/USD"
@@ -80,9 +80,17 @@ def get_price():
         "x-access-token": GOLD_API_KEY,
         "Content-Type": "application/json"
     }
-    r = requests.get(url, headers=headers, timeout=10)
-    data = r.json()
-    return float(data["price"])
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        data = r.json()
+        if "price" in data:
+            return float(data["price"])
+        else:
+            send_telegram(f"⚠️ Gold API Error: {data}")
+            return None
+    except Exception as e:
+        send_telegram(f"⚠️ Exception Gold API: {e}")
+        return None
 
 def ema(data, period=50):
     if len(data) < period:
@@ -141,7 +149,7 @@ def check_command():
 def command_loop():
     while True:
         check_command()
-        time.sleep(1)  # respons cepat
+        time.sleep(1)
 
 threading.Thread(target=command_loop, daemon=True).start()
 
@@ -157,6 +165,10 @@ send_telegram("✅ TEST BOT AKTIF")
 while True:
     try:
         price = get_price()
+        if price is None:
+            time.sleep(CHECK_INTERVAL)
+            continue  # skip loop jika API error
+
         prices.append(price)
         ema50 = ema(list(prices))
         ema20 = ema(list(prices), 20)
