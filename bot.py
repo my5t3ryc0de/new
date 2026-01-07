@@ -12,7 +12,7 @@ BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
 ADMIN_ID = 5446217291
 ALLOWED_USERS = [5446217291]
 
-CHECK_INTERVAL = 60  # M1
+CHECK_INTERVAL = 60  # 1 menit
 LOT = 0.01
 MODAL = 100
 TP = 500
@@ -117,6 +117,7 @@ def check_command():
                 send_telegram(f"⚠️ Anda tidak diizinkan (Chat ID: {chat_id})", chat_id)
                 continue
 
+            # ===== COMMANDS =====
             if text == "/status":
                 winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
                 send_telegram(f"🤖 Bot Status\nActive: {'Yes' if in_position else 'No'}\nTotal Trade: {total_trade}\nWin: {win} | Loss: {loss}\n💯 Winrate Aktual: {winrate_actual:.2f}%", chat_id)
@@ -141,6 +142,18 @@ def check_command():
                 price_now = prices[-1] if prices else "N/A"
                 send_telegram(f"💰 Harga XAU/USD Saat Ini: {price_now}", chat_id)
 
+                # ===== Generate Chart via QuickChart.io =====
+                if len(prices) >= 2:
+                    chart_data = ",".join([str(p) for p in prices])
+                    chart_url = (
+                        "https://quickchart.io/chart?c={"
+                        "type:'line',"
+                        "data:{labels:[" + ",".join([f"'{i}'" for i in range(len(prices))]) + "],"
+                        "datasets:[{label:'XAU/USD',data:[" + chart_data + "]}]}"
+                        "}"
+                    )
+                    send_telegram(f"📈 Chart Harga Terakhir:\n{chart_url}", chat_id)
+
             elif text == "/help":
                 send_telegram(
                     "📌 Daftar Command:\n"
@@ -162,10 +175,10 @@ threading.Thread(target=lambda: [check_command() or time.sleep(2) for _ in iter(
 # =====================
 # START BOT
 # =====================
-send_telegram("🤖 XAU/USD Bot M1 Gratis Aktif | TP/SL 500 point | Admin Aktif | Harga via Investing.com", ADMIN_ID)
+send_telegram("🤖 XAU/USD Bot M1 Gratis Aktif | TP/SL 500 point | Admin Aktif | Chart via QuickChart.io", ADMIN_ID)
 
 # =====================
-# MAIN TRADING LOOP (M1)
+# MAIN TRADING LOOP
 # =====================
 while True:
     try:
@@ -173,7 +186,7 @@ while True:
         if not price:
             send_telegram("⚠️ Gagal ambil harga XAU/USD, menunggu retry...", ADMIN_ID)
             time.sleep(CHECK_INTERVAL)
-            continue  # jangan kirim signal jika harga tidak valid
+            continue
 
         prices.append(price)
         ema50 = ema(list(prices), 50)
@@ -185,7 +198,7 @@ while True:
         signal = None
         strategy_used = None
 
-        # Strategi sederhana → sinyal lebih sering
+        # STRATEGI UTAMA → sinyal lebih sering
         if not in_position:
             slope = ema20 - ema(list(prices)[-21:-1], 20) if len(prices) > 21 else 0
             if ema20 > ema50 and slope > 0.05:
