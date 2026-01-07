@@ -3,7 +3,7 @@ import time
 from collections import deque
 from datetime import datetime
 import threading
-import yfinance as yf  # gunakan Yahoo Finance
+import re
 
 # =====================
 # BOT SETTINGS
@@ -12,7 +12,7 @@ BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
 ADMIN_ID = 5446217291
 ALLOWED_USERS = [5446217291]
 
-CHECK_INTERVAL = 60  # 1 menit = M1
+CHECK_INTERVAL = 60  # M1
 LOT = 0.01
 MODAL = 100
 TP = 500
@@ -64,18 +64,21 @@ def keep_alive():
             requests.get("https://api.telegram.org", timeout=5)
         except:
             pass
-        time.sleep(300)  # ping tiap 5 menit
+        time.sleep(300)
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
 # =====================
-# GET HARGA XAU/USD VIA YAHOO FINANCE
+# GET HARGA XAU/USD
 # =====================
 def get_price():
     try:
-        data = yf.Ticker("GC=F").history(period="1m")
-        if not data.empty:
-            return float(data['Close'][-1])
+        url = "https://www.investing.com/commodities/gold"
+        headers = {"User-Agent":"Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=10)
+        m = re.search(r'id="last_last">([\d,\.]+)<', r.text)
+        if m:
+            return float(m.group(1).replace(",", ""))
     except:
         pass
     return prices[-1] if prices else None  # fallback harga terakhir
@@ -159,7 +162,7 @@ threading.Thread(target=lambda: [check_command() or time.sleep(2) for _ in iter(
 # =====================
 # START BOT
 # =====================
-send_telegram("🤖 XAU/USD Bot M1 Gratis Aktif | TP/SL 500 point | Admin Aktif | Harga via Yahoo Finance", ADMIN_ID)
+send_telegram("🤖 XAU/USD Bot M1 Gratis Aktif | TP/SL 500 point | Admin Aktif | Harga via Investing.com", ADMIN_ID)
 
 # =====================
 # MAIN TRADING LOOP (M1)
