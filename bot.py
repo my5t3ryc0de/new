@@ -40,6 +40,7 @@ def ema(data, period=50):
     return e
 
 send_telegram("🤖 Bot XAUUSD Railway AKTIF")
+send_telegram("✅ TEST BOT AKTIF")
 
 while True:
     try:
