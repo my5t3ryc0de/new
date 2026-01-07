@@ -103,6 +103,7 @@ while True:
 
         price = get_price()
         prices.append(price)
+        send_telegram(f"⏱ BOT CHECK M3 | Harga: {price}")
 
         if len(prices) < RANGE_LOOKBACK:
             time.sleep(CHECK_INTERVAL)
