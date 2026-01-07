@@ -82,16 +82,17 @@ def calculate_winrate():
     wins = sum(1 for t in trades if t['result'] == 'WIN')
     return wins / len(trades) * 100
 
-# ===== TELEGRAM LISTENER =====
+# ===== TELEGRAM LISTENER ANTI TIMEOUT =====
 def telegram_listener():
     global TP_POINTS, SL_POINTS, INTERVAL, MA_SHORT, MA_LONG, trades
     offset = None
     while True:
         try:
-            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?timeout=100"
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?timeout=60"
             if offset:
                 url += f"&offset={offset}"
-            updates = requests.get(url, timeout=10).json()
+
+            updates = requests.get(url, timeout=65).json()
             for update in updates.get("result", []):
                 offset = update["update_id"] + 1
                 msg = update.get("message", {}).get("text", "").lower()
@@ -154,6 +155,10 @@ def telegram_listener():
                         "/help                → Lihat daftar perintah"
                     )
                     send_telegram(help_text)
+
+        except requests.exceptions.ReadTimeout:
+            print("⚠️ ReadTimeout Telegram API, mencoba lagi...")
+            time.sleep(1)
         except Exception as e:
             print("⚠️ Error listener:", e)
             time.sleep(5)
