@@ -18,10 +18,9 @@ CHAT_ID = os.getenv("CHAT_ID")
 CHECK_INTERVAL = 60  # M1
 LOT = 0.01
 MODAL = 100
-
-TP1 = 5    # $5
-TP2 = 10   # $10
-SL = 5     # $5
+TP1 = 5
+TP2 = 10
+SL = 5
 
 prices = deque(maxlen=50)
 in_position = False
@@ -37,6 +36,8 @@ total_trade = 0
 win = 0
 loss = 0
 
+# =====================
+# TELEGRAM FUNCTIONS
 # =====================
 def send_telegram(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -74,6 +75,44 @@ def ema(data, period=50):
     return e
 
 # =====================
+# TELEGRAM COMMANDS
+# =====================
+def check_command():
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+        r = requests.get(url, timeout=5)
+        data = r.json()
+        if "result" in data and len(data["result"]) > 0:
+            for msg in data["result"]:
+                message = msg["message"]
+                text = message.get("text", "")
+                chat_id = message["chat"]["id"]
+                if chat_id != int(CHAT_ID):
+                    continue
+
+                if text == "/status":
+                    resp = f"🤖 Bot Status\nActive: {'Yes' if in_position or prices else 'No'}\nTotal Trade: {total_trade}\nWin: {win} | Loss: {loss}\nWinrate: {(win/total_trade*100 if total_trade>0 else 0):.2f}%"
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": resp})
+
+                elif text == "/balance":
+                    resp = f"💰 Modal: ${MODAL}\nLot: {LOT}\nTP1: ${TP1} | TP2: ${TP2} | SL: ${SL}"
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": resp})
+
+                elif text == "/lastsignal":
+                    if in_position:
+                        resp = f"📌 Last Signal: {position_type}\nEntry: {entry_price}\nTP1: {tp1_price} | TP2: {tp2_price}\nSL: {sl_price}"
+                    else:
+                        resp = "📌 No active signal right now."
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": resp})
+
+                elif text == "/help":
+                    resp = "/status - Cek status bot\n/balance - Cek modal & lot\n/lastsignal - Lihat sinyal terakhir\n/help - Daftar command"
+                    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": resp})
+
+    except Exception as e:
+        pass
+
+# =====================
 # BOT START
 # =====================
 send_telegram("🤖 Ultimate XAUUSD Bot M1 AKTIF")
@@ -84,6 +123,10 @@ send_telegram("✅ TEST BOT AKTIF")
 # =====================
 while True:
     try:
+        # ✅ Cek command Telegram
+        check_command()
+        
+        # ✅ Ambil harga & strategi
         price = get_price()
         prices.append(price)
         ema50 = ema(list(prices))
@@ -94,7 +137,6 @@ while True:
         high = max(prices)
         low = min(prices)
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
-
         signal = None
 
         # Strategi EMA Sweep + Momentum
@@ -133,9 +175,8 @@ Time: {now}
             send_telegram(msg)
             send_chart(list(prices), entry_price, tp1_price, tp2_price, sl_price)
 
-        # Monitor TP / SL
+        # Monitor TP / SL Multiple
         if in_position:
-            hit_msg = None
             if position_type=="BUY":
                 if not tp1_hit and price >= tp1_price:
                     tp1_hit = True
@@ -150,7 +191,6 @@ Time: {now}
                     total_trade += 1
                     loss += 1
                     send_telegram(f"❌ SL HIT (BUY) | Entry: {entry_price} | Price: {price} | Time: {now} | Winrate: {(win/total_trade*100):.2f}%")
-
             elif position_type=="SELL":
                 if not tp1_hit and price <= tp1_price:
                     tp1_hit = True
