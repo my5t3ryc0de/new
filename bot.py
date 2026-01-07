@@ -3,7 +3,7 @@ import time
 from collections import deque
 from datetime import datetime
 import threading
-import re
+import yfinance as yf  # gunakan Yahoo Finance
 
 # =====================
 # BOT SETTINGS
@@ -56,7 +56,7 @@ def send_telegram(msg, chat_id):
         pass
 
 # =====================
-# KEEP-ALIVE PING
+# KEEP-ALIVE
 # =====================
 def keep_alive():
     while True:
@@ -64,24 +64,21 @@ def keep_alive():
             requests.get("https://api.telegram.org", timeout=5)
         except:
             pass
-        time.sleep(300)  # ping setiap 5 menit
+        time.sleep(300)  # ping tiap 5 menit
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
 # =====================
-# GET HARGA XAU/USD
+# GET HARGA XAU/USD VIA YAHOO FINANCE
 # =====================
 def get_price():
     try:
-        url = "https://www.investing.com/commodities/gold"
-        headers = {"User-Agent":"Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=10)
-        m = re.search(r'id="last_last">([\d,\.]+)<', r.text)
-        if m:
-            return float(m.group(1).replace(",", ""))
+        data = yf.Ticker("GC=F").history(period="1m")
+        if not data.empty:
+            return float(data['Close'][-1])
     except:
         pass
-    return None  # harga tidak valid jika gagal
+    return prices[-1] if prices else None  # fallback harga terakhir
 
 def ema(data, period=50):
     if len(data) < period:
@@ -162,7 +159,7 @@ threading.Thread(target=lambda: [check_command() or time.sleep(2) for _ in iter(
 # =====================
 # START BOT
 # =====================
-send_telegram("🤖 XAU/USD Bot M1 Gratis Aktif | TP/SL 500 point | Admin Aktif", ADMIN_ID)
+send_telegram("🤖 XAU/USD Bot M1 Gratis Aktif | TP/SL 500 point | Admin Aktif | Harga via Yahoo Finance", ADMIN_ID)
 
 # =====================
 # MAIN TRADING LOOP (M1)
@@ -173,7 +170,7 @@ while True:
         if not price:
             send_telegram("⚠️ Gagal ambil harga XAU/USD, menunggu retry...", ADMIN_ID)
             time.sleep(CHECK_INTERVAL)
-            continue  # jangan lanjut ke signal jika harga tidak valid
+            continue  # jangan kirim signal jika harga tidak valid
 
         prices.append(price)
         ema50 = ema(list(prices), 50)
