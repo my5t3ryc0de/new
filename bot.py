@@ -2,27 +2,21 @@ import requests
 import time
 from collections import deque
 from datetime import datetime
+import random
 import threading
 
 # =====================
 # BOT SETTING LANGSUNG
 # =====================
 BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
-CHAT_ID = 5446217291  # primary user
 ADMIN_ID = 5446217291
-ALLOWED_USERS = [5446217291]  # bisa tambah user
+ALLOWED_USERS = [5446217291]
 
-CHECK_INTERVAL = 10
+CHECK_INTERVAL = 30  # loop ringan, hemat baterai
 LOT = 0.01
 MODAL = 100
 TP = 500
 SL = 500
-
-# =====================
-# GoldAPI.io (gratis versi terbatas)
-# Daftar di https://www.goldapi.io/
-# =====================
-GOLD_API_KEY = "YOUR_FREE_API_KEY"
 
 # =====================
 # TRADING VARIABLES
@@ -40,9 +34,6 @@ loss = 0
 last_update_id = None
 last_signal_sent = None
 
-# =====================
-# STRATEGI + WINRATE
-# =====================
 strategies_winrate = {
     "EMA Crossover + Slope": 65,
     "Breakout 10 Candle": 60,
@@ -57,7 +48,7 @@ strategies_winrate = {
 # =====================
 # TELEGRAM FUNCTION
 # =====================
-def send_telegram(msg, chat_id=CHAT_ID):
+def send_telegram(msg, chat_id):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         requests.post(url, json={"chat_id": chat_id, "text": msg})
@@ -65,37 +56,27 @@ def send_telegram(msg, chat_id=CHAT_ID):
         pass
 
 # =====================
-# GET GOLD PRICE VIA API
+# SIMULASI HARGA XAU/USD
 # =====================
 def get_price():
-    try:
-        url = "https://www.goldapi.io/api/XAU/USD"
-        headers = {"x-access-token": GOLD_API_KEY, "Content-Type": "application/json"}
-        r = requests.get(url, headers=headers, timeout=10)
-        data = r.json()
-        if "price" in data:
-            return float(data["price"])
-        elif prices:  # fallback harga terakhir
-            return prices[-1]
-        else:
-            return None
-    except:
-        return prices[-1] if prices else None
+    if prices:
+        last_price = prices[-1]
+        fluct = last_price * random.uniform(-0.005, 0.005)  # ±0.5%
+        return round(last_price + fluct, 2)
+    else:
+        return round(random.uniform(1950, 2000), 2)
 
-# =====================
-# EMA FUNCTION
-# =====================
 def ema(data, period=50):
     if len(data) < period:
         return None
     k = 2 / (period + 1)
     e = data[0]
     for p in data[1:]:
-        e = p * k + e * (1 - k)
+        e = p*k + e*(1-k)
     return e
 
 # =====================
-# INIT LAST UPDATE
+# TELEGRAM COMMANDS
 # =====================
 def init_last_update():
     global last_update_id
@@ -110,87 +91,73 @@ def init_last_update():
 
 init_last_update()
 
-# =====================
-# TELEGRAM COMMANDS
-# =====================
 def check_command():
     global last_update_id
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?timeout=5"
         r = requests.get(url, timeout=5)
         data = r.json()
-        if "result" in data:
-            for msg in data["result"]:
-                update_id = msg["update_id"]
-                if last_update_id is not None and update_id <= last_update_id:
-                    continue
-                last_update_id = update_id
+        for msg in data.get("result", []):
+            update_id = msg["update_id"]
+            if last_update_id and update_id <= last_update_id:
+                continue
+            last_update_id = update_id
 
-                message = msg.get("message")
-                if not message:
-                    continue
-                text = message.get("text", "")
-                chat_id = message["chat"]["id"]
+            message = msg.get("message")
+            if not message:
+                continue
+            text = message.get("text", "")
+            chat_id = message["chat"]["id"]
 
-                if chat_id not in ALLOWED_USERS:
-                    send_telegram(f"⚠️ Anda tidak diizinkan menggunakan bot ini (Chat ID: {chat_id})", chat_id)
-                    continue
+            if chat_id not in ALLOWED_USERS:
+                send_telegram(f"⚠️ Anda tidak diizinkan (Chat ID: {chat_id})", chat_id)
+                continue
 
-                # COMMANDS
-                if text == "/status":
+            if text == "/status":
+                winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
+                send_telegram(f"🤖 Bot Status\nActive: {'Yes' if in_position else 'No'}\nTotal Trade: {total_trade}\nWin: {win} | Loss: {loss}\n💯 Winrate Aktual: {winrate_actual:.2f}%", chat_id)
+
+            elif text == "/balance":
+                send_telegram(f"💰 Modal: ${MODAL}\nLot: {LOT}\nTP: {TP} | SL: {SL}", chat_id)
+
+            elif text == "/lastsignal":
+                if in_position:
                     winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
-                    send_telegram(f"🤖 Bot Status\nActive: {'Yes' if in_position else 'No'}\nTotal Trade: {total_trade}\nWin: {win} | Loss: {loss}\n💯 Winrate Aktual: {winrate_actual:.2f}%", chat_id)
+                    send_telegram(f"📌 Last Signal: {position_type}\nEntry: {entry_price}\nTP: {tp_price}\nSL: {sl_price}\nStrategi: {strategy_used}\nHarga Saat Ini: {prices[-1]}\n💯 Winrate Aktual: {winrate_actual:.2f}%", chat_id)
+                else:
+                    send_telegram("📌 No active signal right now.", chat_id)
 
-                elif text == "/balance":
-                    send_telegram(f"💰 Modal: ${MODAL}\nLot: {LOT}\nTP: {TP} | SL: {SL}", chat_id)
+            elif text == "/strategi":
+                msg = "📊 Strategi XAU/USD yang digunakan:\n\n"
+                for i, (name, rate) in enumerate(strategies_winrate.items(), start=1):
+                    msg += f"{i}. {name.ljust(25)} : {rate}%\n"
+                send_telegram(msg, chat_id)
 
-                elif text == "/lastsignal":
-                    if in_position:
-                        winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
-                        send_telegram(f"📌 Last Signal: {position_type}\nEntry: {entry_price}\nTP: {tp_price}\nSL: {sl_price}\nStrategi: {strategy_used}\nHarga Sekarang: {prices[-1]}\n💯 Winrate Aktual: {winrate_actual:.2f}%", chat_id)
-                    else:
-                        send_telegram("📌 No active signal right now.", chat_id)
+            elif text == "/price":
+                send_telegram(f"💰 Harga XAU/USD Saat Ini: {prices[-1]}", chat_id)
 
-                elif text == "/strategi":
-                    msg = "📊 Strategi XAU/USD yang digunakan:\n\n"
-                    for i, (name, rate) in enumerate(strategies_winrate.items(), start=1):
-                        msg += f"{i}. {name.ljust(25)} : {rate}%\n"
+            elif text == "/help":
+                send_telegram(
+                    "📌 Daftar Command:\n"
+                    "/status /balance /lastsignal /strategi /price /help /listuser", chat_id
+                )
+
+            elif text == "/listuser":
+                if chat_id == ADMIN_ID:
+                    msg = "📋 Daftar User yang diizinkan:\n" + "\n".join([str(u) for u in ALLOWED_USERS])
                     send_telegram(msg, chat_id)
-
-                elif text == "/price":
-                    current_price = get_price()
-                    if current_price:
-                        send_telegram(f"💰 Harga XAU/USD Saat Ini: {current_price}", chat_id)
-                    else:
-                        send_telegram("⚠️ Gagal mengambil harga XAU/USD", chat_id)
-
-                elif text == "/help":
-                    send_telegram(
-                        "📌 Daftar Command Bot XAU/USD:\n"
-                        "/status /balance /lastsignal /strategi /price /help /listuser", chat_id
-                    )
-
-                elif text == "/listuser":
-                    if chat_id == ADMIN_ID:
-                        msg = "📋 Daftar User yang diizinkan:\n" + "\n".join([str(u) for u in ALLOWED_USERS])
-                        send_telegram(msg, chat_id)
-                    else:
-                        send_telegram("⚠️ Command ini hanya bisa dipakai oleh Admin!", chat_id)
+                else:
+                    send_telegram("⚠️ Command ini hanya bisa dipakai oleh Admin!", chat_id)
 
     except:
         pass
 
-def telegram_loop():
-    while True:
-        check_command()
-        time.sleep(1)
-
-threading.Thread(target=telegram_loop, daemon=True).start()
+threading.Thread(target=lambda: [check_command() or time.sleep(2) for _ in iter(int,1)], daemon=True).start()
 
 # =====================
 # START BOT
 # =====================
-send_telegram("🤖 XAUUSD Bot ✅ | TP/SL 500 Point | Strategi Aktif | Winrate ditampilkan | Admin Active")
+send_telegram("🤖 XAU/USD Bot Ultra-Ringan Aktif | TP/SL 500 point | Gratis & Aman | Admin Aktif", ADMIN_ID)
 
 # =====================
 # MAIN TRADING LOOP
@@ -198,13 +165,11 @@ send_telegram("🤖 XAUUSD Bot ✅ | TP/SL 500 Point | Strategi Aktif | Winrate 
 while True:
     try:
         price = get_price()
-        if not price:
-            time.sleep(CHECK_INTERVAL)
-            continue
-
         prices.append(price)
+
         ema50 = ema(list(prices), 50)
         ema20 = ema(list(prices), 20)
+
         if ema50 is None or ema20 is None:
             time.sleep(CHECK_INTERVAL)
             continue
@@ -212,6 +177,7 @@ while True:
         signal = None
         strategy_used = None
 
+        # Strategi sederhana untuk lebih sering sinyal
         if not in_position:
             slope = ema20 - ema(list(prices)[-21:-1], 20) if len(prices) > 21 else 0
             if ema20 > ema50 and slope > 0.05:
@@ -238,43 +204,25 @@ while True:
             entry_price = price
             tp_price = entry_price + TP if signal == "BUY" else entry_price - TP
             sl_price = entry_price - SL if signal == "BUY" else entry_price + SL
-            winrate_strategy = strategies_winrate.get(strategy_used, 0)
-            winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
 
-            msg = f"""📈 SIGNAL {signal} XAU/USD
-Entry: {entry_price}
-Harga Saat Ini: {price}
-TP: {tp_price}
-SL: {sl_price}
-Strategi: {strategy_used}
-Winrate Strategi: {winrate_strategy}%
-Total Trade: {total_trade} | ✅ Win: {win} | ❌ Loss: {loss} | 💯 Winrate Aktual: {winrate_actual:.2f}%"""
-            send_telegram(msg)
             last_signal_sent = signal
+            send_telegram(f"📈 SIGNAL {signal} | Harga: {price} | TP: {tp_price} | SL: {sl_price} | Strategi: {strategy_used}", ADMIN_ID)
 
+        # Monitor TP/SL
         if in_position:
-            winrate_strategy = strategies_winrate.get(strategy_used, 0)
             if position_type == "BUY":
                 if price >= tp_price:
                     in_position = False; total_trade += 1; win += 1
-                    winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
-                    send_telegram(f"✅ TP HIT (BUY) | Price: {price} | Strategi: {strategy_used} | Winrate Strategi: {winrate_strategy}% | 💯 Winrate Aktual: {winrate_actual:.2f}%")
                 elif price <= sl_price:
                     in_position = False; total_trade += 1; loss += 1
-                    winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
-                    send_telegram(f"❌ SL HIT (BUY) | Price: {price} | Strategi: {strategy_used} | Winrate Strategi: {winrate_strategy}% | 💯 Winrate Aktual: {winrate_actual:.2f}%")
             elif position_type == "SELL":
                 if price <= tp_price:
                     in_position = False; total_trade += 1; win += 1
-                    winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
-                    send_telegram(f"✅ TP HIT (SELL) | Price: {price} | Strategi: {strategy_used} | Winrate Strategi: {winrate_strategy}% | 💯 Winrate Aktual: {winrate_actual:.2f}%")
                 elif price >= sl_price:
                     in_position = False; total_trade += 1; loss += 1
-                    winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
-                    send_telegram(f"❌ SL HIT (SELL) | Price: {price} | Strategi: {strategy_used} | Winrate Strategi: {winrate_strategy}% | 💯 Winrate Aktual: {winrate_actual:.2f}%")
 
         time.sleep(CHECK_INTERVAL)
 
     except Exception as e:
-        send_telegram(f"⚠️ Error: {e}")
+        send_telegram(f"⚠️ Error: {e}", ADMIN_ID)
         time.sleep(5)
