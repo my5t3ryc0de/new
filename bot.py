@@ -4,8 +4,8 @@ import time
 from threading import Thread
 
 # ===== CONFIG dari Environment Variables Railway =====
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")  # HARUS di-set di Railway
-CHAT_ID = os.environ.get("CHAT_ID")                # HARUS di-set di Railway
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
 PAIR = os.environ.get("PAIR", "BTCUSDT")
 MA_SHORT = int(os.environ.get("MA_SHORT", 5))
 MA_LONG = int(os.environ.get("MA_LONG", 20))
@@ -154,6 +154,9 @@ def telegram_listener():
                         "/help                → Lihat daftar perintah"
                     )
                     send_telegram(help_text)
+        except Exception as e:
+            print("⚠️ Error listener:", e)
+            time.sleep(5)
 
 # ===== TRADING LOOP =====
 def trading_loop():
