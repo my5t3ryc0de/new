@@ -1,7 +1,10 @@
 import requests
 import time
 from collections import deque
+from datetime import datetime
 import os
+import matplotlib.pyplot as plt
+from io import BytesIO
 
 # =====================
 # ENV VARIABLE (Railway)
@@ -9,21 +12,52 @@ import os
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-CHECK_INTERVAL = 60
-TP_POINT = 15
-SL_POINT = 10
+# =====================
+# CONFIG
+# =====================
+CHECK_INTERVAL = 60  # M1
+LOT = 0.01
+MODAL = 100
+
+TP1 = 5    # $5
+TP2 = 10   # $10
+SL = 5     # $5
 
 prices = deque(maxlen=50)
 in_position = False
 position_type = None
 entry_price = 0
-tp_price = 0
+tp1_price = 0
+tp2_price = 0
 sl_price = 0
+tp1_hit = False
+
+# Winrate tracker
+total_trade = 0
+win = 0
+loss = 0
 
 # =====================
 def send_telegram(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     requests.post(url, json={"chat_id": CHAT_ID, "text": msg})
+
+def send_chart(prices, entry=None, tp1=None, tp2=None, sl=None):
+    plt.figure(figsize=(5,3))
+    plt.plot(prices, label="Price")
+    if entry: plt.axhline(entry, color='green', linestyle='--', label="Entry")
+    if tp1: plt.axhline(tp1, color='blue', linestyle='--', label="TP1")
+    if tp2: plt.axhline(tp2, color='cyan', linestyle='--', label="TP2")
+    if sl: plt.axhline(sl, color='red', linestyle='--', label="SL")
+    plt.legend()
+    plt.tight_layout()
+    buf = BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close()
+    files = {'photo': buf}
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+    requests.post(url, files=files, data={"chat_id": CHAT_ID})
 
 def get_price():
     url = "https://api.gold-api.com/price/XAU"
@@ -39,14 +73,19 @@ def ema(data, period=50):
         e = p * k + e * (1 - k)
     return e
 
-send_telegram("🤖 Bot XAUUSD Railway AKTIF")
+# =====================
+# BOT START
+# =====================
+send_telegram("🤖 Ultimate XAUUSD Bot M1 AKTIF")
 send_telegram("✅ TEST BOT AKTIF")
 
+# =====================
+# LOOP UTAMA
+# =====================
 while True:
     try:
         price = get_price()
         prices.append(price)
-
         ema50 = ema(list(prices))
         if ema50 is None:
             time.sleep(CHECK_INTERVAL)
@@ -54,42 +93,78 @@ while True:
 
         high = max(prices)
         low = min(prices)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+        signal = None
+
+        # Strategi EMA Sweep + Momentum
         if not in_position:
             if price < low and price > ema50:
-                in_position = True
-                position_type = "BUY"
-                entry_price = price
-                tp_price = price + TP_POINT
-                sl_price = price - SL_POINT
-
-                send_telegram(f"📈 BUY XAUUSD\nEntry: {price}\nTP: {tp_price}\nSL: {sl_price}")
-
+                signal = "BUY"
             elif price > high and price < ema50:
-                in_position = True
-                position_type = "SELL"
-                entry_price = price
-                tp_price = price - TP_POINT
-                sl_price = price + SL_POINT
+                signal = "SELL"
+            elif len(prices) >= 4:
+                if prices[-1] > prices[-2] > prices[-3] > prices[-4]:
+                    signal = "BUY"
+                elif prices[-1] < prices[-2] < prices[-3] < prices[-4]:
+                    signal = "SELL"
 
-                send_telegram(f"📉 SELL XAUUSD\nEntry: {price}\nTP: {tp_price}\nSL: {sl_price}")
+        # Execute signal
+        if signal and not in_position:
+            in_position = True
+            position_type = signal
+            entry_price = price
+            tp1_price = entry_price + TP1 if signal=="BUY" else entry_price - TP1
+            tp2_price = entry_price + TP2 if signal=="BUY" else entry_price - TP2
+            sl_price = entry_price - SL if signal=="BUY" else entry_price + SL
+            tp1_hit = False
 
-        else:
-            if position_type == "BUY" and price >= tp_price:
-                in_position = False
-                send_telegram("✅ TP HIT (BUY)")
+            msg = f"""
+📈 SIGNAL {signal} XAU/USD
+Entry: {entry_price}
+TP1: {tp1_price} | TP2: {tp2_price}
+SL: {sl_price}
 
-            elif position_type == "BUY" and price <= sl_price:
-                in_position = False
-                send_telegram("❌ SL HIT (BUY)")
+High50: {high} | Low50: {low} | EMA50: {ema50:.2f}
+Time: {now}
 
-            elif position_type == "SELL" and price <= tp_price:
-                in_position = False
-                send_telegram("✅ TP HIT (SELL)")
+📊 Total Trade: {total_trade} | ✅ Win: {win} | ❌ Loss: {loss} | 💯 Winrate: {(win/total_trade*100 if total_trade>0 else 0):.2f}%
+"""
+            send_telegram(msg)
+            send_chart(list(prices), entry_price, tp1_price, tp2_price, sl_price)
 
-            elif position_type == "SELL" and price >= sl_price:
-                in_position = False
-                send_telegram("❌ SL HIT (SELL)")
+        # Monitor TP / SL
+        if in_position:
+            hit_msg = None
+            if position_type=="BUY":
+                if not tp1_hit and price >= tp1_price:
+                    tp1_hit = True
+                    send_telegram(f"✅ TP1 HIT (BUY) | Entry: {entry_price} | Price: {price} | Time: {now}")
+                elif tp1_hit and price >= tp2_price:
+                    in_position = False
+                    total_trade += 1
+                    win += 1
+                    send_telegram(f"✅ TP2 HIT (BUY) | Entry: {entry_price} | Price: {price} | Time: {now} | Winrate: {(win/total_trade*100):.2f}%")
+                elif price <= sl_price:
+                    in_position = False
+                    total_trade += 1
+                    loss += 1
+                    send_telegram(f"❌ SL HIT (BUY) | Entry: {entry_price} | Price: {price} | Time: {now} | Winrate: {(win/total_trade*100):.2f}%")
+
+            elif position_type=="SELL":
+                if not tp1_hit and price <= tp1_price:
+                    tp1_hit = True
+                    send_telegram(f"✅ TP1 HIT (SELL) | Entry: {entry_price} | Price: {price} | Time: {now}")
+                elif tp1_hit and price <= tp2_price:
+                    in_position = False
+                    total_trade += 1
+                    win += 1
+                    send_telegram(f"✅ TP2 HIT (SELL) | Entry: {entry_price} | Price: {price} | Time: {now} | Winrate: {(win/total_trade*100):.2f}%")
+                elif price >= sl_price:
+                    in_position = False
+                    total_trade += 1
+                    loss += 1
+                    send_telegram(f"❌ SL HIT (SELL) | Entry: {entry_price} | Price: {price} | Time: {now} | Winrate: {(win/total_trade*100):.2f}%")
 
         time.sleep(CHECK_INTERVAL)
 
