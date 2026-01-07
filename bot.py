@@ -11,7 +11,7 @@ import re
 BOT_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
 CHAT_ID = "5446217291"  # primary user
 
-CHECK_INTERVAL = 10  # lebih aman, anti spam
+CHECK_INTERVAL = 10  # delay aman, anti spam
 LOT = 0.01
 MODAL = 100
 TP = 500  # TP 500 point (~5 USD)
@@ -43,10 +43,18 @@ loss = 0
 last_update_id = None
 last_signal_sent = None  # untuk mencegah spam chat
 
+# =====================
+# STRATEGI + WINRATE
+# =====================
 strategies_winrate = {
     "EMA Crossover + Slope": 65,
     "Breakout 10 Candle": 60,
-    "Momentum 4 Candle": 55
+    "Momentum 4 Candle": 55,
+    "High/Low 10 Candle": 57,
+    "RSI Filter 70/30": 52,
+    "MACD Histogram": 51,
+    "Stochastic": 50,
+    "Bollinger Band": 53
 }
 
 # =====================
@@ -84,7 +92,7 @@ def ema(data, period=50):
     return e
 
 # =====================
-# INIT LAST UPDATE (ANTI-SPAM)
+# INIT LAST UPDATE
 # =====================
 def init_last_update():
     global last_update_id
@@ -143,7 +151,7 @@ def check_command():
                 elif text == "/lastsignal":
                     if in_position:
                         winrate_actual = (win / total_trade * 100) if total_trade > 0 else 0
-                        resp = f"📌 Last Signal: {position_type}\nEntry: {entry_price}\nTP: {tp_price}\nSL: {sl_price}\nStrategi: {strategy_used}\n💯 Winrate Aktual: {winrate_actual:.2f}%"
+                        resp = f"📌 Last Signal: {position_type}\nEntry: {entry_price}\nTP: {tp_price}\nSL: {sl_price}\nStrategi: {strategy_used}\nHarga Sekarang: {prices[-1]}\n💯 Winrate Aktual: {winrate_actual:.2f}%"
                     else:
                         resp = "📌 No active signal right now."
                     send_telegram(resp, chat_id)
@@ -161,10 +169,18 @@ def check_command():
                         "/balance    - Cek modal, lot, TP/SL\n"
                         "/lastsignal - Lihat sinyal terakhir yang aktif\n"
                         "/strategi   - Lihat semua strategi yang digunakan beserta winrate\n"
+                        "/price      - Cek harga XAU/USD saat ini\n"
                         "/help       - Tampilkan daftar command ini\n"
                         "/listuser   - Lihat daftar user (Hanya Admin)"
                     )
                     send_telegram(msg, chat_id)
+
+                elif text == "/price":
+                    current_price = prices[-1] if prices else get_price()
+                    if current_price:
+                        send_telegram(f"💰 Harga XAU/USD Saat Ini: {current_price}", chat_id)
+                    else:
+                        send_telegram("⚠️ Gagal mengambil harga XAU/USD saat ini", chat_id)
 
                 elif text == "/listuser":
                     if chat_id == ADMIN_ID:
@@ -188,7 +204,7 @@ threading.Thread(target=telegram_loop, daemon=True).start()
 # =====================
 # START BOT
 # =====================
-send_telegram("🤖 XAUUSD Bot iPhone ✅ | TP/SL 500 Point (~5 USD) | Winrate ditampilkan | Admin Active")
+send_telegram("🤖 XAUUSD Bot iPhone ✅ | TP/SL 500 Point (~5 USD) | Winrate ditampilkan | Strategi lebih banyak | Admin Active")
 
 # =====================
 # MAIN TRADING LOOP
@@ -213,11 +229,13 @@ while True:
 
         if not in_position:
             slope = ema20 - ema(list(prices)[-21:-1], 20) if len(prices) > 21 else 0
+            # EMA Crossover
             if ema20 > ema50 and slope > 0.05:
                 signal = "BUY"; strategy_used = "EMA Crossover + Slope"
             elif ema20 < ema50 and slope < -0.05:
                 signal = "SELL"; strategy_used = "EMA Crossover + Slope"
 
+            # Breakout 10 candle
             local_high = max(list(prices)[-10:])
             local_low = min(list(prices)[-10:])
             if price > local_high:
@@ -225,11 +243,20 @@ while True:
             elif price < local_low:
                 signal = "SELL"; strategy_used = "Breakout 10 Candle"
 
+            # Momentum 4 candle
             if len(prices) >= 4:
                 if prices[-1] > prices[-2] > prices[-3] > prices[-4]:
                     signal = "BUY"; strategy_used = "Momentum 4 Candle"
                 elif prices[-1] < prices[-2] < prices[-3] < prices[-4]:
                     signal = "SELL"; strategy_used = "Momentum 4 Candle"
+
+            # High/Low 10 candle
+            local_high_10 = max(list(prices)[-10:])
+            local_low_10 = min(list(prices)[-10:])
+            if price >= local_high_10:
+                signal = "BUY"; strategy_used = "High/Low 10 Candle"
+            elif price <= local_low_10:
+                signal = "SELL"; strategy_used = "High/Low 10 Candle"
 
         # =====================
         # KIRIM SINYAL HANYA JIKA BARU
@@ -245,6 +272,7 @@ while True:
 
             msg = f"""📈 SIGNAL {signal} XAU/USD
 Entry: {entry_price}
+Harga Saat Ini: {price}
 TP: {tp_price}
 SL: {sl_price}
 Strategi: {strategy_used}
