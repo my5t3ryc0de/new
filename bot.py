@@ -8,10 +8,11 @@ from io import BytesIO
 import threading
 
 # =====================
-# ENV VARIABLE (Railway)
+# ENV VARIABLES
 # =====================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+GOLD_API_KEY = os.getenv("GOLD_API_KEY")  # <-- API key kamu disini
 
 # =====================
 # CONFIG
@@ -70,10 +71,18 @@ def send_chart(prices, entry=None, tp1=None, tp2=None, sl=None):
     except:
         pass
 
+# =====================
+# GET PRICE GOLD API
+# =====================
 def get_price():
-    url = "https://api.gold-api.com/price/XAU"
-    r = requests.get(url, timeout=10)
-    return float(r.json()["price"])
+    url = "https://www.goldapi.io/api/XAU/USD"
+    headers = {
+        "x-access-token": GOLD_API_KEY,
+        "Content-Type": "application/json"
+    }
+    r = requests.get(url, headers=headers, timeout=10)
+    data = r.json()
+    return float(data["price"])
 
 def ema(data, period=50):
     if len(data) < period:
@@ -96,38 +105,30 @@ def check_command():
         if "result" in data:
             for msg in data["result"]:
                 update_id = msg["update_id"]
-
-                # skip pesan lama
                 if last_update_id is not None and update_id <= last_update_id:
                     continue
-
                 last_update_id = update_id
 
                 message = msg.get("message")
                 if not message:
                     continue
-
                 text = message.get("text", "")
                 chat_id = message["chat"]["id"]
                 if chat_id != int(CHAT_ID):
                     continue
 
-                # === COMMANDS ===
                 if text == "/status":
                     resp = f"🤖 Bot Status\nActive: {'Yes' if in_position else 'No'}\nTotal Trade: {total_trade}\nWin: {win} | Loss: {loss}\nWinrate: {(win/total_trade*100 if total_trade>0 else 0):.2f}%"
                     send_telegram(resp)
-
                 elif text == "/balance":
                     resp = f"💰 Modal: ${MODAL}\nLot: {LOT}\nTP1: ${TP1} | TP2: ${TP2} | SL: ${SL}"
                     send_telegram(resp)
-
                 elif text == "/lastsignal":
                     if in_position:
                         resp = f"📌 Last Signal: {position_type}\nEntry: {entry_price}\nTP1: {tp1_price} | TP2: {tp2_price}\nSL: {sl_price}"
                     else:
                         resp = "📌 No active signal right now."
                     send_telegram(resp)
-
                 elif text == "/help":
                     resp = "/status - Cek status bot\n/balance - Cek modal & lot\n/lastsignal - Lihat sinyal terakhir\n/help - Daftar command"
                     send_telegram(resp)
@@ -135,12 +136,12 @@ def check_command():
         pass
 
 # =====================
-# COMMAND THREAD
+# THREAD COMMAND TELEGRAM
 # =====================
 def command_loop():
     while True:
         check_command()
-        time.sleep(1)  # cek command tiap 1 detik untuk respons cepat
+        time.sleep(1)  # respons cepat
 
 threading.Thread(target=command_loop, daemon=True).start()
 
@@ -158,7 +159,8 @@ while True:
         price = get_price()
         prices.append(price)
         ema50 = ema(list(prices))
-        if ema50 is None:
+        ema20 = ema(list(prices), 20)
+        if ema50 is None or ema20 is None:
             time.sleep(CHECK_INTERVAL)
             continue
 
@@ -167,9 +169,13 @@ while True:
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         signal = None
 
-        # Strategi EMA Sweep + Momentum
+        # STRATEGI: EMA CROSS + EMA SWEEP + MOMENTUM
         if not in_position:
-            if price < low and price > ema50:
+            if ema20 > ema50:
+                signal = "BUY"
+            elif ema20 < ema50:
+                signal = "SELL"
+            elif price < low and price > ema50:
                 signal = "BUY"
             elif price > high and price < ema50:
                 signal = "SELL"
@@ -194,16 +200,14 @@ while True:
 Entry: {entry_price}
 TP1: {tp1_price} | TP2: {tp2_price}
 SL: {sl_price}
-
-High50: {high} | Low50: {low} | EMA50: {ema50:.2f}
+High50: {high} | Low50: {low} | EMA50: {ema50:.2f} | EMA20: {ema20:.2f}
 Time: {now}
-
 📊 Total Trade: {total_trade} | ✅ Win: {win} | ❌ Loss: {loss} | 💯 Winrate: {(win/total_trade*100 if total_trade>0 else 0):.2f}%
 """
             send_telegram(msg)
             send_chart(list(prices), entry_price, tp1_price, tp2_price, sl_price)
 
-        # Monitor TP / SL Multiple
+        # Monitor TP / SL
         if in_position:
             if position_type=="BUY":
                 if not tp1_hit and price >= tp1_price:
