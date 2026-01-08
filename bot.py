@@ -1,167 +1,186 @@
 import requests
 import time
-import urllib.parse
 
-# ================= CONFIG =================
-TELEGRAM_TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
+# =========================
+# TELEGRAM CONFIG
+# =========================
+TOKEN = "8009906926:AAEyuRMx4elUM6Xfbx7Kp9uH_Ix6ww86DJ4"
 CHAT_ID = "5446217291"
 
-PAIR = "XAUUSD"
-MA_SHORT = 5
-MA_LONG = 20
-INTERVAL = 30   # detik
+# =========================
+# STRATEGY CONFIG
+# =========================
+SYMBOL = "XAUUSD"
+TIMEFRAME = "3m"
 
-TP_POINTS = 3.0   # $3
-SL_POINTS = 3.0   # $3
+EQUAL_TOLERANCE = 0.3      # toleransi equal high/low
+TP_POINT = 300
+SL_POINT = 300
+POINT_VALUE = 0.01        # 1 point = 0.01 harga
 
-prices = []
-entries = {}
+TP_PRICE = TP_POINT * POINT_VALUE
+SL_PRICE = SL_POINT * POINT_VALUE
 
-# ================= TELEGRAM =================
+SCAN_INTERVAL = 30        # detik
+
+# =========================
+# GLOBAL STATE
+# =========================
+candles = []
+active_setup = None
+last_alert_id = None
+
+# =========================
+# TELEGRAM
+# =========================
 def send_telegram(text):
-    print(text)
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.get(
-            url,
-            params={"chat_id": CHAT_ID, "text": text},
-            timeout=10
-        )
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": text
+        }, timeout=10)
     except Exception as e:
-        print("⚠️ Telegram error:", e)
+        print("Telegram error:", e)
 
-def send_chart():
-    if len(prices) < 10:
-        return
-
-    data = prices[-30:]
-
-    chart_config = {
-        "type": "line",
-        "data": {
-            "labels": list(range(len(data))),
-            "datasets": [{
-                "label": "XAUUSD",
-                "data": data,
-                "fill": False,
-                "borderColor": "gold"
-            }]
-        }
-    }
-
-    encoded = urllib.parse.quote(str(chart_config).replace("'", '"'))
-    chart_url = f"https://quickchart.io/chart?c={encoded}"
-
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-        requests.post(
-            url,
-            data={"chat_id": CHAT_ID, "photo": chart_url},
-            timeout=10
-        )
-    except Exception as e:
-        print("⚠️ Chart error:", e)
-
-# ================= PRICE =================
+# =========================
+# PRICE DATA (FREE API)
+# =========================
 def get_price():
     try:
-        data = requests.get(
-            "https://api.metals.live/v1/spot",
-            timeout=10
-        ).json()
-        return float(data["gold"])
+        r = requests.get("https://api.metals.live/v1/spot", timeout=10).json()
+        for item in r:
+            if item[0] == "gold":
+                return float(item[1])
     except:
-        return prices[-1] if prices else 2000.0
+        pass
+    return None
 
-# ================= INDICATOR =================
-def ma(data, n):
-    if len(data) < n:
-        return sum(data) / len(data)
-    return sum(data[-n:]) / n
+def build_candle(price):
+    now = int(time.time())
+    candles.append({
+        "time": now,
+        "open": price,
+        "high": price,
+        "low": price,
+        "close": price
+    })
 
-def ema(data, n):
-    if len(data) < n:
-        return ma(data, len(data))
-    k = 2 / (n + 1)
-    e = ma(data[:n], n)
-    for p in data[n:]:
-        e = p * k + e * (1 - k)
-    return e
+    if len(candles) > 100:
+        candles.pop(0)
 
-def rsi(data, n=14):
-    if len(data) < n + 1:
-        return 50
-    gains, losses = 0, 0
-    for i in range(-n, 0):
-        d = data[i] - data[i - 1]
-        if d > 0:
-            gains += d
-        else:
-            losses -= d
-    if losses == 0:
-        return 100
-    rs = gains / losses
-    return 100 - (100 / (1 + rs))
+# =========================
+# LOGIC DETECTION
+# =========================
+def detect_equal():
+    if len(candles) < 5:
+        return None
 
-# ================= STRATEGY =================
-def strategy_ma():
-    s = ma(prices, MA_SHORT)
-    l = ma(prices, MA_LONG)
-    if s > l:
-        return "BUY", "MA Strategy"
-    if s < l:
-        return "SELL", "MA Strategy"
-    return None, None
+    c1 = candles[-3]
+    c2 = candles[-5]
 
-def strategy_ema():
-    s = ema(prices, MA_SHORT)
-    l = ema(prices, MA_LONG)
-    if s > l:
-        return "BUY", "EMA Strategy"
-    if s < l:
-        return "SELL", "EMA Strategy"
-    return None, None
+    # Equal High
+    if abs(c1["high"] - c2["high"]) <= EQUAL_TOLERANCE:
+        return ("equal_high", max(c1["high"], c2["high"]))
 
-def strategy_rsi():
-    r = rsi(prices)
-    if r < 30:
-        return "BUY", "RSI Strategy"
-    if r > 70:
-        return "SELL", "RSI Strategy"
-    return None, None
+    # Equal Low
+    if abs(c1["low"] - c2["low"]) <= EQUAL_TOLERANCE:
+        return ("equal_low", min(c1["low"], c2["low"]))
 
-strategies = [strategy_ma, strategy_ema, strategy_rsi]
+    return None
 
-# ================= MAIN LOOP =================
+def detect_fvg():
+    if len(candles) < 3:
+        return None
+
+    c0 = candles[-1]
+    c2 = candles[-3]
+
+    # Bullish FVG
+    if c0["low"] > c2["high"]:
+        return ("bullish", c2["high"], c0["low"])
+
+    # Bearish FVG
+    if c0["high"] < c2["low"]:
+        return ("bearish", c0["high"], c2["low"])
+
+    return None
+
+# =========================
+# MAIN LOOP
+# =========================
 def trading_loop():
+    global active_setup, last_alert_id
+
     send_telegram("✅ BOT SIGNAL XAUUSD AKTIF (FREE VERSION)")
+
+    last_price = None
 
     while True:
         try:
             price = get_price()
-            prices.append(price)
+            if price is None:
+                time.sleep(5)
+                continue
 
             print("Harga:", price)
 
-            for strat in strategies:
-                signal, name = strat()
-                if signal and name not in entries:
-                    entries[name] = {
-                        "signal": signal,
-                        "entry": price
-                    }
+            if last_price != price:
+                build_candle(price)
+                last_price = price
+
+            equal = detect_equal()
+            fvg = detect_fvg()
+
+            # ALERT 1 — SETUP
+            if equal and fvg and active_setup is None:
+                setup_id = f"{equal[0]}_{fvg[0]}"
+
+                active_setup = {
+                    "type": fvg[0],
+                    "zone_low": min(fvg[1], fvg[2]),
+                    "zone_high": max(fvg[1], fvg[2]),
+                }
+
+                send_telegram(
+                    f"🟡 SETUP TERDETEKSI (M3)\n\n"
+                    f"Pair: {SYMBOL}\n"
+                    f"Setup: {equal[0]} + {fvg[0]} FVG\n"
+                    f"Zona FVG: {active_setup['zone_low']:.2f} - {active_setup['zone_high']:.2f}\n\n"
+                    f"Status: Menunggu retrace"
+                )
+
+            # ALERT 2 — ENTRY
+            if active_setup:
+                if active_setup["zone_low"] <= price <= active_setup["zone_high"]:
+                    direction = "BUY" if active_setup["type"] == "bullish" else "SELL"
+
+                    if direction == "BUY":
+                        tp = price + TP_PRICE
+                        sl = price - SL_PRICE
+                    else:
+                        tp = price - TP_PRICE
+                        sl = price + SL_PRICE
 
                     send_telegram(
-                        f"📊 {name}\n"
-                        f"Signal: {signal}\n"
-                        f"Harga: {price}"
+                        f"🟢 ENTRY SIGNAL (M3)\n\n"
+                        f"Pair: {SYMBOL}\n"
+                        f"Action: {direction}\n"
+                        f"Entry: {price:.2f}\n"
+                        f"TP: {tp:.2f}\n"
+                        f"SL: {sl:.2f}\n"
+                        f"Strategy: FVG + Equal"
                     )
-                    send_chart()
 
-            time.sleep(INTERVAL)
+                    active_setup = None
+
+            time.sleep(SCAN_INTERVAL)
 
         except Exception as e:
-            print("⚠️ LOOP ERROR:", e)
+            print("Loop error:", e)
             time.sleep(5)
 
+# =========================
+# START BOT
+# =========================
 trading_loop()
