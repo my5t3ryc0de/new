@@ -15,7 +15,7 @@ SYMBOL = "BTCUSDT"
 INTERVAL = 20
 TP_USD = 40
 SL_USD = 40
-MAX_TRADES = 10
+MAX_TRADES = 8
 
 # =========================
 # DATA STORAGE
@@ -24,6 +24,7 @@ prices = deque(maxlen=120)
 open_trades = []
 stats = {}
 last_signal_time = {}
+last_update_id = 0
 
 # =========================
 # TELEGRAM
@@ -34,6 +35,67 @@ def send_telegram(text):
         requests.post(url, data={"chat_id": CHAT_ID, "text": text}, timeout=5)
     except:
         pass
+
+def get_updates():
+    global last_update_id
+    url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+    try:
+        r = requests.get(url, params={"offset": last_update_id + 1}, timeout=5).json()
+        if "result" in r:
+            for update in r["result"]:
+                last_update_id = update["update_id"]
+                if "message" in update:
+                    yield update["message"]
+    except:
+        pass
+
+# =========================
+# COMMAND HANDLER
+# =========================
+def handle_command(text):
+    if text == "/help":
+        send_telegram(
+            "📖 COMMAND LIST\n\n"
+            "/help - Daftar command\n"
+            "/status - Status bot\n"
+            "/stats - Winrate strategi\n"
+            "/setting - Setting TP/SL\n"
+            "/reset - Reset statistik"
+        )
+
+    elif text == "/status":
+        send_telegram(
+            f"🤖 BOT STATUS\n\n"
+            f"Pair: {SYMBOL}\n"
+            f"Open Trade: {len(open_trades)}\n"
+            f"Price Cache: {len(prices)}"
+        )
+
+    elif text == "/setting":
+        send_telegram(
+            f"⚙️ BOT SETTING\n\n"
+            f"TP: ${TP_USD}\n"
+            f"SL: ${SL_USD}\n"
+            f"Interval: {INTERVAL}s\n"
+            f"Max Trade: {MAX_TRADES}"
+        )
+
+    elif text == "/stats":
+        if not stats:
+            send_telegram("📊 Belum ada trade.")
+            return
+
+        msg = "📊 WINRATE\n\n"
+        for k, v in stats.items():
+            total = v["win"] + v["loss"]
+            wr = (v["win"] / total) * 100 if total else 0
+            msg += f"{k}\nWin: {v['win']} | Loss: {v['loss']} | WR: {wr:.1f}%\n\n"
+
+        send_telegram(msg)
+
+    elif text == "/reset":
+        stats.clear()
+        send_telegram("♻️ Statistik berhasil direset.")
 
 # =========================
 # PRICE FETCH
@@ -70,7 +132,7 @@ def rsi(data, n=14):
     return 100 - (100 / (1 + rs))
 
 # =========================
-# STRATEGIES (SIMPLIFIED 5)
+# STRATEGIES (5 SAFE)
 # =========================
 def run_strategies():
     signals = []
@@ -134,7 +196,12 @@ def open_trade(strategy, direction, price):
         stats[strategy] = {"win": 0, "loss": 0}
 
     send_telegram(
-        f"🚀 SIGNAL\n{strategy}\n{direction}\nEntry: {price:.2f}\nTP: {tp:.2f}\nSL: {sl:.2f}"
+        f"🚀 SIGNAL\n\n"
+        f"{strategy}\n"
+        f"{direction}\n"
+        f"Entry: {price:.2f}\n"
+        f"TP: {tp:.2f}\n"
+        f"SL: {sl:.2f}"
     )
 
 def update_trades(price):
@@ -163,17 +230,27 @@ def update_trades(price):
         winrate = (s["win"] / total) * 100 if total else 0
 
         send_telegram(
-            f"📊 CLOSED\n{t['strategy']} | {result}\nWinrate: {winrate:.1f}%"
+            f"📊 CLOSED\n\n"
+            f"{t['strategy']}\n"
+            f"Result: {result}\n"
+            f"Winrate: {winrate:.1f}%"
         )
 
 # =========================
 # MAIN LOOP
 # =========================
 def main():
-    send_telegram("✅ BTCUSDT BOT STABLE MODE AKTIF")
+    send_telegram("✅ BTCUSDT BOT + COMMAND + WINRATE AKTIF")
 
     while True:
         try:
+            # --- Read Commands
+            for msg in get_updates():
+                text = msg.get("text", "")
+                if text.startswith("/"):
+                    handle_command(text)
+
+            # --- Price Update
             price = get_price()
             if price is None:
                 time.sleep(5)
